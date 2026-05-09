@@ -761,10 +761,8 @@ async function buildDriveClient() {
         throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: Must be raw JSON or base64 encoded JSON.');
       }
     }
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/drive']
-    });
+    const auth = google.auth.fromJSON(credentials);
+    auth.scopes = ['https://www.googleapis.com/auth/drive'];
     return google.drive({ version: 'v3', auth });
   }
 
@@ -889,13 +887,14 @@ app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (
   const r = await drive.files.create({
     requestBody: {
       name: `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`,
-      parents: [folderId],
+      parents: [String(folderId).trim()],
       mimeType: 'application/json'
     },
     media: {
       mimeType: 'application/json',
       body: data
     },
+    supportsAllDrives: true,
     fields: 'id, name'
   });
 
