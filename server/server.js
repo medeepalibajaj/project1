@@ -726,37 +726,30 @@ const upload = multer({
 async function buildDriveClient() {
   const tokenRow = await getDriveTokens();
 
+  // 1. Database-stored OAuth tokens
   if (tokenRow?.refresh_token && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
+    const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
     oauth2Client.setCredentials({
       refresh_token: tokenRow.refresh_token,
       access_token: tokenRow.access_token || undefined,
       expiry_date: tokenRow.expiry_date || undefined
     });
-    // Persist refreshed tokens back to the database automatically
     oauth2Client.on('tokens', async (tokens) => {
       try {
-        await query(
-          `UPDATE drive_tokens SET access_token=?, expiry_date=? WHERE provider='google_oauth'`,
-          [tokens.access_token || '', tokens.expiry_date || 0]
-        );
+        await query(`UPDATE drive_tokens SET access_token=?, expiry_date=? WHERE provider='google_oauth'`, [tokens.access_token || '', tokens.expiry_date || 0]);
       } catch (e) { console.error('Token refresh persist error:', e.message); }
     });
     return google.drive({ version: 'v3', auth: oauth2Client });
   }
 
+  // 2. Static OAuth refresh token from env
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN) {
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
+    const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
     oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
     return google.drive({ version: 'v3', auth: oauth2Client });
   }
 
+  // 3. Service Account JSON (Base64 or Raw)
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     let credentials;
     try {
@@ -770,7 +763,7 @@ async function buildDriveClient() {
     }
     const auth = new google.auth.GoogleAuth({
       credentials,
-      scopes: ['https://www.googleapis.com/auth/drive.file']
+      scopes: ['https://www.googleapis.com/auth/drive']
     });
     return google.drive({ version: 'v3', auth });
   }
@@ -884,39 +877,28 @@ app.get('/api/drive/list', auth, safeJsonRoute(async (req, res) => {
 }));
 
 app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (req, res) => {
-  if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (!folderId) {
     return res.status(400).json({ error: 'GOOGLE_DRIVE_FOLDER_ID is not configured' });
   }
-  let authClient;
-  const tokenRow = await getDriveTokens();
-  if (tokenRow?.refresh_token && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    authClient = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-    authClient.setCredentials({ refresh_token: tokenRow.refresh_token, access_token: tokenRow.access_token || undefined, expiry_date: tokenRow.expiry_date || undefined });
-  } else if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN) {
-    authClient = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-    authClient.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    let credentials;
-    try {
-      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    } catch (e) {
-      try {
-        credentials = JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON, 'base64').toString());
-      } catch (e2) {
-        throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: Must be raw JSON or base64 encoded JSON.');
-      }
-    }
-    authClient = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/drive.file'] });
-  } else {
-    return res.status(400).json({ error: 'Google Drive is not connected. Please connect a Google account in Backup settings.' });
-  }
+
+  const drive = await buildDriveClient();
   const year = req.body.year === 'all' ? null : selectedYear(req);
-  const drive = google.drive({ version: 'v3', auth: authClient });
   const data = JSON.stringify(encryptBackupObject(await collectBackup(year)), null, 2);
+
   const r = await drive.files.create({
-    requestBody: { name: `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`, parents: [process.env.GOOGLE_DRIVE_FOLDER_ID], mimeType: 'application/json' },
-    media: { mimeType: 'application/json', body: data }
+    requestBody: {
+      name: `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`,
+      parents: [folderId],
+      mimeType: 'application/json'
+    },
+    media: {
+      mimeType: 'application/json',
+      body: data
+    },
+    fields: 'id, name'
   });
+
   res.json({ ok: true, fileId: r.data.id });
 }));
 
