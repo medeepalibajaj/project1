@@ -787,11 +787,12 @@ app.post('/api/drive/upload', auth, canManageUsers, upload.array('files', 20), s
   for (const file of req.files) {
     const fileStream = Readable.from(file.buffer);
     const requestBody = { name: file.originalname, mimeType: file.mimetype };
-    if (folderId) requestBody.parents = [folderId];
+    if (folderId) requestBody.parents = [String(folderId).trim()];
 
     const response = await drive.files.create({
       requestBody,
       media: { mimeType: file.mimetype, body: fileStream },
+      supportsAllDrives: true,
       fields: 'id, name, mimeType, size, webViewLink, createdTime'
     });
 
@@ -884,6 +885,7 @@ app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (
   const year = req.body.year === 'all' ? null : selectedYear(req);
   const data = JSON.stringify(encryptBackupObject(await collectBackup(year)), null, 2);
 
+  console.log('Attempting Drive backup upload to folder:', folderId);
   const r = await drive.files.create({
     requestBody: {
       name: `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`,
@@ -895,8 +897,10 @@ app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (
       body: data
     },
     supportsAllDrives: true,
+    keepRevisionForever: false,
     fields: 'id, name'
   });
+  console.log('Drive backup upload success:', r.data.id);
 
   res.json({ ok: true, fileId: r.data.id });
 }));
