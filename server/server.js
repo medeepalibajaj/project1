@@ -692,16 +692,21 @@ app.get('/api/drive/callback', safeJsonRoute(async (req, res) => {
 
 app.get('/api/drive/status', auth, canManageUsers, safeJsonRoute(async (req, res) => {
   const tokenRow = await getDriveTokens();
-  const hasEnv = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const hasOAuthEnv = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const hasServiceAccount = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const hasFolder = !!process.env.GOOGLE_DRIVE_FOLDER_ID;
+  
+  const isConnected = !!(tokenRow?.refresh_token || process.env.GOOGLE_REFRESH_TOKEN || hasServiceAccount);
+
   res.json({
-    connected: !!(tokenRow?.refresh_token || process.env.GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_SERVICE_ACCOUNT_JSON), 
-    email: tokenRow?.email || null,
-    configured: hasEnv, folder_set: hasFolder,
-    message: !hasEnv ? 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set in environment variables.'
+    connected: isConnected,
+    email: tokenRow?.email || (hasServiceAccount ? 'Service Account' : null),
+    configured: hasOAuthEnv || hasServiceAccount,
+    folder_set: hasFolder,
+    message: (!hasOAuthEnv && !hasServiceAccount) ? 'Google credentials not set. Add GOOGLE_CLIENT_ID/SECRET or GOOGLE_SERVICE_ACCOUNT_JSON.'
       : !hasFolder ? 'GOOGLE_DRIVE_FOLDER_ID is not set.'
-      : !tokenRow?.refresh_token ? 'Not connected. Click Connect to link a Google account.'
-      : `Connected to ${tokenRow.email || 'Google Drive'}.`
+      : !isConnected ? 'Not connected. Click Connect to link a Google account.'
+      : `Connected to ${tokenRow?.email || (hasServiceAccount ? 'Service Account' : 'Google Drive')}.`
   });
 }));
 
