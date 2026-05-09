@@ -246,4 +246,3 @@ export default function Backup({ year }) {
     </div>
   );
 }
-"// FTP backup" 
