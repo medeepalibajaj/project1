@@ -758,7 +758,16 @@ async function buildDriveClient() {
   }
 
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    let credentials;
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    } catch (e) {
+      try {
+        credentials = JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON, 'base64').toString());
+      } catch (e2) {
+        throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: Must be raw JSON or base64 encoded JSON.');
+      }
+    }
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: ['https://www.googleapis.com/auth/drive.file']
@@ -887,7 +896,16 @@ app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (
     authClient = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
     authClient.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
   } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    let credentials;
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    } catch (e) {
+      try {
+        credentials = JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON, 'base64').toString());
+      } catch (e2) {
+        throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: Must be raw JSON or base64 encoded JSON.');
+      }
+    }
     authClient = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/drive.file'] });
   } else {
     return res.status(400).json({ error: 'Google Drive is not connected. Please connect a Google account in Backup settings.' });
