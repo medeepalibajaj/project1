@@ -730,9 +730,10 @@ const upload = multer({
  */
 async function buildDriveClient() {
   const tokenRow = await getDriveTokens();
+  const hasOAuthEnv = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
   // 1. Database-stored OAuth tokens
-  if (tokenRow?.refresh_token && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  if (tokenRow?.refresh_token && hasOAuthEnv) {
     const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
     oauth2Client.setCredentials({
       refresh_token: tokenRow.refresh_token,
@@ -748,7 +749,7 @@ async function buildDriveClient() {
   }
 
   // 2. Static OAuth refresh token from env
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN) {
+  if (hasOAuthEnv && process.env.GOOGLE_REFRESH_TOKEN) {
     const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
     oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
     return google.drive({ version: 'v3', auth: oauth2Client });
@@ -769,6 +770,11 @@ async function buildDriveClient() {
     const auth = google.auth.fromJSON(credentials);
     auth.scopes = ['https://www.googleapis.com/auth/drive'];
     return google.drive({ version: 'v3', auth });
+  }
+
+  // Detailed error reporting
+  if (tokenRow?.refresh_token && !hasOAuthEnv) {
+    throw new Error('Google account is linked, but GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing in environment variables.');
   }
 
   throw new Error('Google Drive is not connected. Please connect a Google account in Backup settings.');
