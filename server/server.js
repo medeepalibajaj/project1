@@ -10,6 +10,7 @@ import { google } from 'googleapis';
 import crypto from 'crypto';
 import { Readable } from 'stream';
 import multer from 'multer';
+import ftp from 'basic-ftp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -692,21 +693,16 @@ app.get('/api/drive/callback', safeJsonRoute(async (req, res) => {
 
 app.get('/api/drive/status', auth, canManageUsers, safeJsonRoute(async (req, res) => {
   const tokenRow = await getDriveTokens();
-  const hasOAuthEnv = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-  const hasServiceAccount = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const hasEnv = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
   const hasFolder = !!process.env.GOOGLE_DRIVE_FOLDER_ID;
-  
-  const isConnected = !!(tokenRow?.refresh_token || process.env.GOOGLE_REFRESH_TOKEN || hasServiceAccount);
-
   res.json({
-    connected: isConnected,
-    email: tokenRow?.email || (hasServiceAccount ? 'Service Account' : null),
-    configured: hasOAuthEnv || hasServiceAccount,
-    folder_set: hasFolder,
-    message: (!hasOAuthEnv && !hasServiceAccount) ? 'Google credentials not set. Add GOOGLE_CLIENT_ID/SECRET or GOOGLE_SERVICE_ACCOUNT_JSON.'
+    connected: !!(tokenRow?.refresh_token || process.env.GOOGLE_REFRESH_TOKEN || process.env.GOOGLE_SERVICE_ACCOUNT_JSON), 
+    email: tokenRow?.email || null,
+    configured: hasEnv, folder_set: hasFolder,
+    message: !hasEnv ? 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set in environment variables.'
       : !hasFolder ? 'GOOGLE_DRIVE_FOLDER_ID is not set.'
-      : !isConnected ? 'Not connected. Click Connect to link a Google account.'
-      : `Connected to ${tokenRow?.email || (hasServiceAccount ? 'Service Account' : 'Google Drive')}.`
+      : !tokenRow?.refresh_token ? 'Not connected. Click Connect to link a Google account.'
+      : `Connected to ${tokenRow.email || 'Google Drive'}.`
   });
 }));
 
@@ -730,51 +726,45 @@ const upload = multer({
  */
 async function buildDriveClient() {
   const tokenRow = await getDriveTokens();
-  const hasOAuthEnv = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
-  // 1. Database-stored OAuth tokens
-  if (tokenRow?.refresh_token && hasOAuthEnv) {
-    const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+  if (tokenRow?.refresh_token && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
     oauth2Client.setCredentials({
       refresh_token: tokenRow.refresh_token,
       access_token: tokenRow.access_token || undefined,
       expiry_date: tokenRow.expiry_date || undefined
     });
+    // Persist refreshed tokens back to the database automatically
     oauth2Client.on('tokens', async (tokens) => {
       try {
-        await query(`UPDATE drive_tokens SET access_token=?, expiry_date=? WHERE provider='google_oauth'`, [tokens.access_token || '', tokens.expiry_date || 0]);
+        await query(
+          `UPDATE drive_tokens SET access_token=?, expiry_date=? WHERE provider='google_oauth'`,
+          [tokens.access_token || '', tokens.expiry_date || 0]
+        );
       } catch (e) { console.error('Token refresh persist error:', e.message); }
     });
     return google.drive({ version: 'v3', auth: oauth2Client });
   }
 
-  // 2. Static OAuth refresh token from env
-  if (hasOAuthEnv && process.env.GOOGLE_REFRESH_TOKEN) {
-    const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN) {
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
     oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
     return google.drive({ version: 'v3', auth: oauth2Client });
   }
 
-  // 3. Service Account JSON (Base64 or Raw)
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    let credentials;
-    try {
-      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    } catch (e) {
-      try {
-        credentials = JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON, 'base64').toString());
-      } catch (e2) {
-        throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: Must be raw JSON or base64 encoded JSON.');
-      }
-    }
-    const auth = google.auth.fromJSON(credentials);
-    auth.scopes = ['https://www.googleapis.com/auth/drive'];
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/drive.file']
+    });
     return google.drive({ version: 'v3', auth });
-  }
-
-  // Detailed error reporting
-  if (tokenRow?.refresh_token && !hasOAuthEnv) {
-    throw new Error('Google account is linked, but GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing in environment variables.');
   }
 
   throw new Error('Google Drive is not connected. Please connect a Google account in Backup settings.');
@@ -798,12 +788,11 @@ app.post('/api/drive/upload', auth, canManageUsers, upload.array('files', 20), s
   for (const file of req.files) {
     const fileStream = Readable.from(file.buffer);
     const requestBody = { name: file.originalname, mimeType: file.mimetype };
-    if (folderId) requestBody.parents = [String(folderId).trim()];
+    if (folderId) requestBody.parents = [folderId];
 
     const response = await drive.files.create({
       requestBody,
       media: { mimeType: file.mimetype, body: fileStream },
-      supportsAllDrives: true,
       fields: 'id, name, mimeType, size, webViewLink, createdTime'
     });
 
@@ -886,34 +875,52 @@ app.get('/api/drive/list', auth, safeJsonRoute(async (req, res) => {
   });
 }));
 
-app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (req, res) => {
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  if (!folderId) {
-    return res.status(400).json({ error: 'GOOGLE_DRIVE_FOLDER_ID is not configured' });
-  }
 
-  const drive = await buildDriveClient();
+app.post('/api/backup/ftp-upload', auth, canManageUsers, safeJsonRoute(async (req, res) => {
+  const FTP_HOST = process.env.FTP_HOST || '185.27.134.11';
+  const FTP_PORT = Number(process.env.FTP_PORT || 21);
+  const FTP_USER = process.env.FTP_USER || 'b18_41550513';
+  const FTP_PASSWORD = process.env.FTP_PASSWORD || 'Pdx134679@';
+  const FTP_FOLDER = process.env.FTP_FOLDER || 'School_management_data';
+
   const year = req.body.year === 'all' ? null : selectedYear(req);
-  const data = JSON.stringify(encryptBackupObject(await collectBackup(year)), null, 2);
+  const fileName = `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`;
 
-  console.log('Attempting Drive backup upload to folder:', folderId);
-  const r = await drive.files.create({
-    requestBody: {
-      name: `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`,
-      parents: [String(folderId).trim()],
-      mimeType: 'application/json'
-    },
-    media: {
-      mimeType: 'application/json',
-      body: data
-    },
-    supportsAllDrives: true,
-    keepRevisionForever: false,
-    fields: 'id, name'
-  });
-  console.log('Drive backup upload success:', r.data.id);
+  const backupData = JSON.stringify(
+    encryptBackupObject(await collectBackup(year)),
+    null,
+    2
+  );
 
-  res.json({ ok: true, fileId: r.data.id });
+  const client = new ftp.Client();
+  client.ftp.verbose = false;
+
+  try {
+    await client.access({
+      host: FTP_HOST,
+      port: FTP_PORT,
+      user: FTP_USER,
+      password: FTP_PASSWORD,
+      secure: false
+    });
+
+    await client.ensureDir(FTP_FOLDER);
+
+    const stream = Readable.from([backupData]);
+    await client.uploadFrom(stream, fileName);
+
+    res.json({
+      ok: true,
+      message: 'Backup uploaded to FTP server successfully',
+      fileName,
+      folder: FTP_FOLDER
+    });
+  } catch (err) {
+    console.error('FTP upload error:', err);
+    res.status(500).json({ error: 'FTP upload failed: ' + err.message });
+  } finally {
+    client.close();
+  }
 }));
 
 // ===== MIGRATE & HEALTH =====
