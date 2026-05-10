@@ -10,7 +10,6 @@ import { google } from 'googleapis';
 import crypto from 'crypto';
 import { Readable } from 'stream';
 import multer from 'multer';
-import ftp from 'basic-ftp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -688,7 +687,7 @@ app.get('/api/drive/callback', safeJsonRoute(async (req, res) => {
 
   await query(`INSERT INTO drive_tokens (provider, refresh_token, access_token, expiry_date, email) VALUES ('google_oauth', ?, ?, ?, ?) ON DUPLICATE KEY UPDATE refresh_token=VALUES(refresh_token), access_token=VALUES(access_token), expiry_date=VALUES(expiry_date), email=VALUES(email)`, [tokens.refresh_token || '', tokens.access_token || '', tokens.expiry_date || 0, email]);
 
-  res.send(`<!DOCTYPE html><html><head><title>Drive Connected</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:60px;background:#f0fdf4;color:#333;}h2{color:#15803d;} .box{background:#fff;padding:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);max-width:420px;margin:0 auto;}</style></head><body><div class="box"><h2>✅ FTP Server Connected!</h2><p>Account: <strong>${email || 'Your Google Account'}</strong></p><p>You can close this window and return to the admin panel.</p></div><script>window.opener?.postMessage({type:'GOOGLE_DRIVE_CONNECTED',email:'${email}'},'*');setTimeout(()=>window.close(),3000);</script></body></html>`);
+  res.send(`<!DOCTYPE html><html><head><title>Drive Connected</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:60px;background:#f0fdf4;color:#333;}h2{color:#15803d;} .box{background:#fff;padding:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);max-width:420px;margin:0 auto;}</style></head><body><div class="box"><h2>✅ Google Drive Connected!</h2><p>Account: <strong>${email || 'Your Google Account'}</strong></p><p>You can close this window and return to the admin panel.</p></div><script>window.opener?.postMessage({type:'GOOGLE_DRIVE_CONNECTED',email:'${email}'},'*');setTimeout(()=>window.close(),3000);</script></body></html>`);
 }));
 
 app.get('/api/drive/status', auth, canManageUsers, safeJsonRoute(async (req, res) => {
@@ -702,7 +701,7 @@ app.get('/api/drive/status', auth, canManageUsers, safeJsonRoute(async (req, res
     message: !hasEnv ? 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set in environment variables.'
       : !hasFolder ? 'GOOGLE_DRIVE_FOLDER_ID is not set.'
       : !tokenRow?.refresh_token ? 'Not connected. Click Connect to link a Google account.'
-      : `Connected to ${tokenRow.email || 'FTP Server'}.`
+      : `Connected to ${tokenRow.email || 'Google Drive'}.`
   });
 }));
 
@@ -720,7 +719,7 @@ const upload = multer({
 });
 
 /**
- * Build an authenticated FTP Server client from stored OAuth tokens or
+ * Build an authenticated Google Drive client from stored OAuth tokens or
  * environment-variable credentials (service account / static refresh token).
  * Throws if no valid credentials are available.
  */
@@ -767,12 +766,12 @@ async function buildDriveClient() {
     return google.drive({ version: 'v3', auth });
   }
 
-  throw new Error('FTP Server is not connected. Please connect a Google account in Backup settings.');
+  throw new Error('Google Drive is not connected. Please connect a Google account in Backup settings.');
 }
 
 /**
  * POST /api/drive/upload
- * Upload one or more files to FTP Server.
+ * Upload one or more files to Google Drive.
  * Accepts multipart/form-data with field name "files".
  * Optional body field "folderId" overrides GOOGLE_DRIVE_FOLDER_ID.
  */
@@ -804,7 +803,7 @@ app.post('/api/drive/upload', auth, canManageUsers, upload.array('files', 20), s
 
 /**
  * GET /api/drive/download/:fileId
- * Download a file from FTP Server and stream it to the client.
+ * Download a file from Google Drive and stream it to the client.
  */
 app.get('/api/drive/download/:fileId', auth, safeJsonRoute(async (req, res) => {
   const { fileId } = req.params;
@@ -840,7 +839,7 @@ app.get('/api/drive/download/:fileId', auth, safeJsonRoute(async (req, res) => {
 
 /**
  * GET /api/drive/list
- * List files in FTP Server.
+ * List files in Google Drive.
  * Query params:
  *   folderId  – restrict to a specific folder (defaults to GOOGLE_DRIVE_FOLDER_ID)
  *   pageSize  – number of results per page (default 50, max 1000)
@@ -875,52 +874,32 @@ app.get('/api/drive/list', auth, safeJsonRoute(async (req, res) => {
   });
 }));
 
-
-app.post('/api/backup/ftp-upload', auth, canManageUsers, safeJsonRoute(async (req, res) => {
-  const FTP_HOST = process.env.FTP_HOST || '185.27.134.11';
-  const FTP_PORT = Number(process.env.FTP_PORT || 21);
-  const FTP_USER = process.env.FTP_USER || 'b18_41550513';
-  const FTP_PASSWORD = process.env.FTP_PASSWORD || 'Pdx134679@';
-  const FTP_FOLDER = process.env.FTP_FOLDER || 'School_management_data';
-
-  const year = req.body.year === 'all' ? null : selectedYear(req);
-  const fileName = `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`;
-
-  const backupData = JSON.stringify(
-    encryptBackupObject(await collectBackup(year)),
-    null,
-    2
-  );
-
-  const client = new ftp.Client();
-  client.ftp.verbose = false;
-
-  try {
-    await client.access({
-      host: FTP_HOST,
-      port: FTP_PORT,
-      user: FTP_USER,
-      password: FTP_PASSWORD,
-      secure: false
-    });
-
-    await client.ensureDir(FTP_FOLDER);
-
-    const stream = Readable.from([backupData]);
-    await client.uploadFrom(stream, fileName);
-
-    res.json({
-      ok: true,
-      message: 'Backup uploaded to FTP server successfully',
-      fileName,
-      folder: FTP_FOLDER
-    });
-  } catch (err) {
-    console.error('FTP upload error:', err);
-    res.status(500).json({ error: 'FTP upload failed: ' + err.message });
-  } finally {
-    client.close();
+app.post('/api/backup/google-drive', auth, canManageUsers, safeJsonRoute(async (req, res) => {
+  if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
+    return res.status(400).json({ error: 'GOOGLE_DRIVE_FOLDER_ID is not configured' });
   }
+  let authClient;
+  const tokenRow = await getDriveTokens();
+  if (tokenRow?.refresh_token && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    authClient = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+    authClient.setCredentials({ refresh_token: tokenRow.refresh_token, access_token: tokenRow.access_token || undefined, expiry_date: tokenRow.expiry_date || undefined });
+  } else if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN) {
+    authClient = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+    authClient.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  } else if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    authClient = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/drive.file'] });
+  } else {
+    return res.status(400).json({ error: 'Google Drive is not connected. Please connect a Google account in Backup settings.' });
+  }
+  const year = req.body.year === 'all' ? null : selectedYear(req);
+  const drive = google.drive({ version: 'v3', auth: authClient });
+  const data = JSON.stringify(encryptBackupObject(await collectBackup(year)), null, 2);
+  const r = await drive.files.create({
+    requestBody: { name: `school-backup-${year || 'all'}-${Date.now()}-encrypted.json`, parents: [process.env.GOOGLE_DRIVE_FOLDER_ID], mimeType: 'application/json' },
+    media: { mimeType: 'application/json', body: data }
+  });
+  res.json({ ok: true, fileId: r.data.id });
 }));
 
 // ===== MIGRATE & HEALTH =====

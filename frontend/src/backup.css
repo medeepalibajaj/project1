@@ -1,4 +1,4 @@
-/* ===== Backup Page + FTP Backup Modal ===== */
+/* ===== Backup Page + Google Drive Modal ===== */
 .backupPage { max-width: 900px; }
 .backupPage h2 {
   display: inline-flex; align-items: center; gap: 8px;
@@ -62,22 +62,22 @@
 .backupMeta b { color: #1e293b; }
 .backupMeta svg { vertical-align: middle; margin-right: 3px; }
 
-/* FTP Card */
-.ftpCard { border-color: #bfdbfe; background: linear-gradient(180deg, #fff 0%, #f0f9ff 100%); }
+/* Drive Card */
+.driveCard { border-color: #bfdbfe; background: linear-gradient(180deg, #fff 0%, #f0f9ff 100%); }
 
-.ftpHeader {
+.driveHeader {
   display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;
 }
 
-.ftpIconWrap {
+.driveIconWrap {
   width: 48px; height: 48px; border-radius: 12px;
   background: linear-gradient(135deg, #3b82f6, #1d4ed8);
   color: #fff; display: grid; place-items: center; flex-shrink: 0;
 }
 
-.ftpInfo { flex: 1; min-width: 200px; }
-.ftpInfo h3 { margin: 0 0 4px; font-size: 16px; }
-.ftpInfo p { margin: 0; font-size: 13px; color: #475569; }
+.driveInfo { flex: 1; min-width: 200px; }
+.driveInfo h3 { margin: 0 0 4px; font-size: 16px; }
+.driveInfo p { margin: 0; font-size: 13px; color: #475569; }
 
 .driveActions { display: flex; align-items: center; gap: 8px; }
 
@@ -86,7 +86,7 @@
   background: #f1f5f9; color: #64748b; font-size: 12px; font-weight: 700;
 }
 
-.ftpUploadRow {
+.driveUploadRow {
   display: flex; align-items: center; gap: 12px; margin-top: 14px;
   padding-top: 14px; border-top: 1px solid #e0f2fe;
 }
@@ -177,7 +177,7 @@
 
 /* Responsive */
 @media (max-width: 640px) {
-  .ftpHeader { flex-direction: column; }
+  .driveHeader { flex-direction: column; }
   .driveActions { width: 100%; }
   .driveActions button { width: 100%; justify-content: center; }
   .modalBox { max-width: 100%; }
