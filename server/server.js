@@ -187,6 +187,21 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS classes (
       id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) UNIQUE NOT NULL, sort_order INT NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS school_info (
+      id INT PRIMARY KEY DEFAULT 1,
+      school_name VARCHAR(255) DEFAULT 'Bright Future Primary School',
+      tagline VARCHAR(255) DEFAULT 'विद्या ददाति विनयम् | Knowledge Gives Humility',
+      phone1 VARCHAR(50) DEFAULT '+91-98765 43210',
+      phone2 VARCHAR(50) DEFAULT '+91-011-1234-5678',
+      email1 VARCHAR(190) DEFAULT 'info@brightfutureschool.edu.in',
+      email2 VARCHAR(190) DEFAULT 'admissions@brightfutureschool.edu.in',
+      address_line1 VARCHAR(255) DEFAULT 'Sector 12, Dwarka',
+      address_line2 VARCHAR(255) DEFAULT 'New Delhi – 110078',
+      office_hours_weekdays VARCHAR(255) DEFAULT 'Mon – Sat: 8:00 AM – 4:00 PM',
+      office_hours_sunday VARCHAR(255) DEFAULT 'Sunday: Closed',
+      established_year VARCHAR(10) DEFAULT '2010'
+    );
+    INSERT IGNORE INTO school_info (id) VALUES (1);
     CREATE TABLE IF NOT EXISTS students (
       id INT AUTO_INCREMENT PRIMARY KEY, admission_id INT NULL, academic_year INT NOT NULL DEFAULT 2025,
       name VARCHAR(190) NOT NULL, sex VARCHAR(20), class_name VARCHAR(80), guardian_name VARCHAR(190),
@@ -371,6 +386,43 @@ app.get('/api/classes', auth, safeJsonRoute(async (req, res) => {
 app.post('/api/classes', auth, adminFeeOnly, safeJsonRoute(async (req, res) => {
   await query('INSERT INTO classes(name,sort_order) VALUES(?,?)', [req.body.name, req.body.sort_order || 99]);
   await query('INSERT IGNORE INTO fee_structures(class_name) VALUES(?)', [req.body.name]);
+  res.json({ ok: true });
+}));
+
+app.put('/api/classes/:id', auth, adminFeeOnly, safeJsonRoute(async (req, res) => {
+  const { name } = req.body;
+  const old = (await query('SELECT name FROM classes WHERE id=?', [req.params.id]))[0];
+  if (!old) return res.status(404).json({ error: 'Class not found' });
+  
+  const p = await getPool(); const conn = await p.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('UPDATE classes SET name=? WHERE id=?', [name, req.params.id]);
+    await conn.query('UPDATE fee_structures SET class_name=? WHERE class_name=?', [name, old.name]);
+    await conn.query('UPDATE students SET class_name=? WHERE class_name=?', [name, old.name]);
+    await conn.query('UPDATE admissions SET class_name=? WHERE class_name=?', [name, old.name]);
+    await conn.query('UPDATE monthly_fee_payments SET class_name=? WHERE class_name=?', [name, old.name]);
+    await conn.query('UPDATE admission_fees SET class_name=? WHERE class_name=?', [name, old.name]);
+    await conn.query('UPDATE report_cards SET class_name=? WHERE class_name=?', [name, old.name]);
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally { conn.release(); }
+}));
+
+app.get('/api/school-info', safeJsonRoute(async (req, res) => {
+  const rows = await query('SELECT * FROM school_info WHERE id=1');
+  res.json(rows[0] || {});
+}));
+
+app.put('/api/school-info', auth, adminFeeOnly, safeJsonRoute(async (req, res) => {
+  const b = req.body;
+  const fields = ['school_name', 'tagline', 'phone1', 'phone2', 'email1', 'email2', 'address_line1', 'address_line2', 'office_hours_weekdays', 'office_hours_sunday', 'established_year'];
+  const sets = fields.map(f => `${f}=?`).join(',');
+  const vals = fields.map(f => b[f]);
+  await query(`UPDATE school_info SET ${sets} WHERE id=1`, vals);
   res.json({ ok: true });
 }));
 

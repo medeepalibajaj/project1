@@ -39,17 +39,40 @@ const stats = [
   { label: "Student-Teacher Ratio", value: "25:1" },
 ];
 
+import { useEffect } from "react";
+
 export default function ChildSchoolHome({ onLogin }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [school, setSchool] = useState({});
+  const [classes, setClasses] = useState([]);
+
+  useEffect(() => {
+    fetch('/api/school-info').then(r => r.json()).then(setSchool).catch(console.error);
+    fetch('/api/classes').then(r => r.json()).then(setClasses).catch(console.error);
+  }, []);
+
+  const s = {
+    name: school.school_name || "Bright Future Primary School",
+    tagline: school.tagline || "विद्या ददाति विनयम् | Knowledge Gives Humility",
+    phone1: school.phone1 || "+91-98765 43210",
+    phone2: school.phone2 || "+91-011-1234-5678",
+    email1: school.email1 || "info@brightfutureschool.edu.in",
+    email2: school.email2 || "admissions@brightfutureschool.edu.in",
+    addr1: school.address_line1 || "Sector 12, Dwarka",
+    addr2: school.address_line2 || "New Delhi – 110078",
+    hours1: school.office_hours_weekdays || "Mon – Sat: 8:00 AM – 4:00 PM",
+    hours2: school.office_hours_sunday || "Sunday: Closed",
+    est: school.established_year || "2010"
+  };
 
   return (
     <div className="schoolHome">
       {/* Top Bar */}
       <div className="topBar">
         <div className="topBarInner">
-          <span><Phone size={14} /> +91-98765 43210</span>
-          <span><Mail size={14} /> info@brightfutureschool.edu.in</span>
-          <span><MapPin size={14} /> New Delhi, India</span>
+          <span><Phone size={14} /> {s.phone1}</span>
+          <span><Mail size={14} /> {s.email1}</span>
+          <span><MapPin size={14} /> {s.addr1}, {s.addr2}</span>
         </div>
       </div>
 
@@ -61,8 +84,8 @@ export default function ChildSchoolHome({ onLogin }) {
               <GraduationCap size={32} />
             </div>
             <div>
-              <h1>Bright Future Primary School</h1>
-              <p>विद्या ददाति विनयम् &nbsp;|&nbsp; Knowledge Gives Humility</p>
+              <h1>{s.name}</h1>
+              <p>{s.tagline}</p>
             </div>
           </div>
 
@@ -132,7 +155,7 @@ export default function ChildSchoolHome({ onLogin }) {
             <span>About Our School</span>
             <h2>Where Tradition Meets Innovation</h2>
             <p>
-              Established in 2010, Bright Future Primary School is a premier institution
+              Established in {s.est}, {s.name} is a premier institution
               dedicated to providing quality education rooted in Indian cultural values.
               We believe every child is unique and deserves an environment that fosters
               curiosity, confidence, and compassion.
@@ -166,12 +189,19 @@ export default function ChildSchoolHome({ onLogin }) {
             </p>
           </div>
           <div className="classGrid">
-            {classes.map((c) => (
-              <div className="classCard" key={c}>
+            {classes.length > 0 ? classes.map((c) => (
+              <div className="classCard" key={c.id || c.name}>
                 <GraduationCap size={28} />
-                <span>{c}</span>
+                <span>{c.name}</span>
               </div>
-            ))}
+            )) : (
+              ["Nursery", "LKG", "UKG", "Class 1", "Class 2", "Class 3", "Class 4", "Class 5"].map(c => (
+                <div className="classCard" key={c}>
+                  <GraduationCap size={28} />
+                  <span>{c}</span>
+                </div>
+              ))
+            )}
           </div>
         </section>
 
@@ -205,8 +235,8 @@ export default function ChildSchoolHome({ onLogin }) {
                 Scholarship programs available for meritorious students.
               </p>
               <div className="admissionMeta">
-                <span><Clock size={16} /> School Hours: 8:00 AM – 2:00 PM</span>
-                <span><MapPin size={16} /> Sector 12, Dwarka, New Delhi</span>
+                <span><Clock size={16} /> School Hours: {s.hours1}</span>
+                <span><MapPin size={16} /> {s.addr1}, {s.addr2}</span>
               </div>
               <div className="heroActions" style={{ marginTop: "22px" }}>
                 <a href="#contact" className="primaryBtn">
@@ -233,26 +263,26 @@ export default function ChildSchoolHome({ onLogin }) {
             <div className="contactCard">
               <Phone size={22} />
               <b>Call Us</b>
-              <span>+91-98765 43210</span>
-              <span>+91-011-1234-5678</span>
+              <span>{s.phone1}</span>
+              <span>{s.phone2}</span>
             </div>
             <div className="contactCard">
               <Mail size={22} />
               <b>Email Us</b>
-              <span>info@brightfutureschool.edu.in</span>
-              <span>admissions@brightfutureschool.edu.in</span>
+              <span>{s.email1}</span>
+              <span>{s.email2}</span>
             </div>
             <div className="contactCard">
               <MapPin size={22} />
               <b>Visit Us</b>
-              <span>Sector 12, Dwarka</span>
-              <span>New Delhi – 110078</span>
+              <span>{s.addr1}</span>
+              <span>{s.addr2}</span>
             </div>
             <div className="contactCard">
               <Clock size={22} />
               <b>Office Hours</b>
-              <span>Mon – Sat: 8:00 AM – 4:00 PM</span>
-              <span>Sunday: Closed</span>
+              <span>{s.hours1}</span>
+              <span>{s.hours2}</span>
             </div>
           </div>
         </section>
@@ -265,8 +295,8 @@ export default function ChildSchoolHome({ onLogin }) {
             <div className="schoolLogo" style={{ marginBottom: "12px" }}>
               <GraduationCap size={28} />
             </div>
-            <h3>Bright Future Primary School</h3>
-            <p>Shaping young minds with knowledge, values, and integrity since 2010.</p>
+            <h3>{s.name}</h3>
+            <p>Shaping young minds with knowledge, values, and integrity since {s.est}.</p>
           </div>
           <div className="footerLinks">
             <b>Quick Links</b>
@@ -290,7 +320,7 @@ export default function ChildSchoolHome({ onLogin }) {
           </div>
         </div>
         <div className="footerBottom">
-          © {new Date().getFullYear()} Bright Future Primary School. All rights reserved. | Made with care in India.
+          © {new Date().getFullYear()} {s.name}. All rights reserved. | Made with care in India.
         </div>
       </footer>
     </div>

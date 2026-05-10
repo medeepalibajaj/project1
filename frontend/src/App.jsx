@@ -137,7 +137,105 @@ function ReportCards({ year }) { const [students,setStudents]=useState([]),[rows
     alert('Could not generate PDF: ' + err.message);
   }
 } return <section className="card"><h2>Report Cards PDF - {year}</h2>{msg&&<div className="alert">{msg}</div>}<div className="grid formGrid"><select value={form.student_id||''} onChange={e=>setForm({...form,student_id:e.target.value})}><option>Select Student</option>{students.map(s=><option value={s.id} key={s.id}>{s.name} - {s.class_name}</option>)}</select><input value={form.exam_name||''} onChange={e=>setForm({...form,exam_name:e.target.value})}/><input value={form.remarks||''} onChange={e=>setForm({...form,remarks:e.target.value})} placeholder="Remarks"/></div><h3>Subjects</h3>{form.subjects.map((s,i)=><div className="grid formGrid" key={i}><input value={s.name} onChange={e=>setSub(i,'name',e.target.value)}/><input type="number" value={s.marks} onChange={e=>setSub(i,'marks',e.target.value)}/><input type="number" value={s.total} onChange={e=>setSub(i,'total',e.target.value)}/><button className="danger" onClick={()=>setForm({...form,subjects:form.subjects.filter((_,x)=>x!==i)})}>Remove</button></div>)}<button onClick={()=>setForm({...form,subjects:[...form.subjects,{name:'',marks:0,total:100}]})}>Add Subject</button><button onClick={save}>Save Report Card</button><table><thead><tr><th>Student</th><th>Class</th><th>Exam</th><th>%</th><th>Grade</th><th>Print</th><th>Delete</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.name}</td><td>{r.class_name}</td><td>{r.exam_name}</td><td>{Number(r.percentage).toFixed(2)}</td><td>{r.grade}</td><td><button className="small" onClick={()=>printReport(r)}><Printer size={14}/></button></td><td><button className="small danger" onClick={async()=>{await api('/report-cards/'+r.id,{method:'DELETE'}); load();}}><Trash2 size={14}/></button></td></tr>)}</tbody></table></section>; }
-function SettingsPage({ user }) { const [fees,setFees]=useState([]),[classes,setClasses]=useState([]),[users,setUsers]=useState([]); const [newClass,setNewClass]=useState(''),[newUser,setNewUser]=useState({role:'coadmin'}),[msg,setMsg]=useState(''); const load=()=>{api('/fee-structures').then(setFees).catch(e=>setMsg(e.message)); api('/classes').then(setClasses).catch(e=>setMsg(e.message)); if(canUsers(user)) api('/users').then(setUsers).catch(e=>setMsg(e.message));}; useEffect(load,[]); async function saveFee(f){await api('/fee-structures/'+encodeURIComponent(f.class_name),{method:'PUT',body:JSON.stringify(f)}); setMsg('Fee structure saved'); load();} return <section className="card"><h2>Settings & Roles</h2>{msg&&<div className="alert">{msg}</div>}<p className="muted">Current role: {roleName(user.role)}. Co-admin has all power except fee structure and user role changes.</p><h3>Class List</h3><div className="toolbar"><input value={newClass} onChange={e=>setNewClass(e.target.value)} placeholder="New class name"/><button onClick={async()=>{await api('/classes',{method:'POST',body:JSON.stringify({name:newClass})}); setNewClass(''); load();}}>Add Class</button></div><div className="chips">{classes.map(c=><span key={c.id||c.name}>{c.name}</span>)}</div><h3>Fee Structure</h3>{!canFee(user)&&<div className="alert error">Co-admin cannot change fee structure.</div>}<table><thead><tr><th>Class</th><th>Monthly Fee</th><th>Admission Fee</th><th>Save</th></tr></thead><tbody>{fees.map(f=><tr key={f.class_name}><td>{f.class_name}</td><td><input disabled={!canFee(user)} defaultValue={f.monthly_fee} onChange={e=>f.monthly_fee=e.target.value}/></td><td><input disabled={!canFee(user)} defaultValue={f.admission_fee} onChange={e=>f.admission_fee=e.target.value}/></td><td><button disabled={!canFee(user)} onClick={()=>saveFee(f)}>Save</button></td></tr>)}</tbody></table>{canUsers(user)&&<><h3>Master-admin / Admin / Co-admin</h3><div className="grid formGrid"><input placeholder="Email" value={newUser.email||''} onChange={e=>setNewUser({...newUser,email:e.target.value})}/><input placeholder="Password" value={newUser.password||''} onChange={e=>setNewUser({...newUser,password:e.target.value})}/><select value={newUser.role||'coadmin'} onChange={e=>setNewUser({...newUser,role:e.target.value})}><option value="coadmin">Co-admin</option><option value="admin">Admin</option>{user.role==='masteradmin'&&<option value="masteradmin">Master-admin</option>}</select><button onClick={async()=>{await api('/users',{method:'POST',body:JSON.stringify(newUser)}); setMsg('User saved'); load();}}>Create / Update</button></div><table><tbody>{users.map(u=><tr key={u.id}><td>{u.email}</td><td>{roleName(u.role)}</td><td>{u.role!=='masteradmin'&&<button className="danger small" onClick={async()=>{await api('/users/'+u.id,{method:'DELETE'}); load();}}>Delete</button>}</td></tr>)}</tbody></table></>}</section>; }
+function SettingsPage({ user }) { 
+  const [fees,setFees]=useState([]),[classes,setClasses]=useState([]),[users,setUsers]=useState([]); 
+  const [school,setSchool]=useState({});
+  const [newClass,setNewClass]=useState(''),[newUser,setNewUser]=useState({role:'coadmin'}),[msg,setMsg]=useState(''); 
+  const [editingClass,setEditingClass]=useState(null);
+
+  const load=()=>{
+    api('/fee-structures').then(setFees).catch(e=>setMsg(e.message)); 
+    api('/classes').then(setClasses).catch(e=>setMsg(e.message)); 
+    api('/school-info').then(setSchool).catch(e=>setMsg(e.message));
+    if(canUsers(user)) api('/users').then(setUsers).catch(e=>setMsg(e.message));
+  }; 
+  useEffect(load,[]); 
+
+  async function saveFee(f){await api('/fee-structures/'+encodeURIComponent(f.class_name),{method:'PUT',body:JSON.stringify(f)}); setMsg('Fee structure saved'); load();}
+  async function saveSchool(){await api('/school-info',{method:'PUT',body:JSON.stringify(school)}); setMsg('School information updated'); load();}
+  async function updateClassName(id, name){await api('/classes/'+id,{method:'PUT',body:JSON.stringify({name})}); setEditingClass(null); setMsg('Class name updated'); load();}
+
+  return <section className="card">
+    <h2>Settings & Roles</h2>
+    {msg&&<div className="alert">{msg}</div>}
+    <p className="muted">Current role: {roleName(user.role)}. Co-admin has all power except fee structure and user role changes.</p>
+
+    <h3>School Information</h3>
+    <div className="grid formGrid">
+      <div className="field"><label>School Name</label><input value={school.school_name||''} onChange={e=>setSchool({...school,school_name:e.target.value})}/></div>
+      <div className="field"><label>Tagline</label><input value={school.tagline||''} onChange={e=>setSchool({...school,tagline:e.target.value})}/></div>
+      <div className="field"><label>Phone 1</label><input value={school.phone1||''} onChange={e=>setSchool({...school,phone1:e.target.value})}/></div>
+      <div className="field"><label>Phone 2</label><input value={school.phone2||''} onChange={e=>setSchool({...school,phone2:e.target.value})}/></div>
+      <div className="field"><label>Email 1</label><input value={school.email1||''} onChange={e=>setSchool({...school,email1:e.target.value})}/></div>
+      <div className="field"><label>Email 2</label><input value={school.email2||''} onChange={e=>setSchool({...school,email2:e.target.value})}/></div>
+      <div className="field"><label>Address Line 1</label><input value={school.address_line1||''} onChange={e=>setSchool({...school,address_line1:e.target.value})}/></div>
+      <div className="field"><label>Address Line 2</label><input value={school.address_line2||''} onChange={e=>setSchool({...school,address_line2:e.target.value})}/></div>
+      <div className="field"><label>Office Hours (Weekdays)</label><input value={school.office_hours_weekdays||''} onChange={e=>setSchool({...school,office_hours_weekdays:e.target.value})}/></div>
+      <div className="field"><label>Office Hours (Sunday)</label><input value={school.office_hours_sunday||''} onChange={e=>setSchool({...school,office_hours_sunday:e.target.value})}/></div>
+      <div className="field"><label>Established Year</label><input value={school.established_year||''} onChange={e=>setSchool({...school,established_year:e.target.value})}/></div>
+    </div>
+    <button onClick={saveSchool} disabled={!canFee(user)}><Save size={16}/> Save School Info</button>
+
+    <h3>Class List</h3>
+    <div className="toolbar">
+      <input value={newClass} onChange={e=>setNewClass(e.target.value)} placeholder="New class name"/>
+      <button onClick={async()=>{await api('/classes',{method:'POST',body:JSON.stringify({name:newClass})}); setNewClass(''); load();}}>Add Class</button>
+    </div>
+    <div className="chips">
+      {classes.map(c=>(
+        <div key={c.id} className="chip-edit">
+          {editingClass === c.id ? (
+            <input 
+              autoFocus 
+              defaultValue={c.name} 
+              onBlur={e => updateClassName(c.id, e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && updateClassName(c.id, e.target.value)}
+            />
+          ) : (
+            <span onClick={() => canFee(user) && setEditingClass(c.id)} title="Click to edit">{c.name}</span>
+          )}
+        </div>
+      ))}
+    </div>
+
+    <h3>Fee Structure</h3>
+    {!canFee(user)&&<div className="alert error">Co-admin cannot change fee structure.</div>}
+    <table>
+      <thead><tr><th>Class</th><th>Monthly Fee</th><th>Admission Fee</th><th>Save</th></tr></thead>
+      <tbody>
+        {fees.map(f=><tr key={f.class_name}>
+          <td>{f.class_name}</td>
+          <td><input disabled={!canFee(user)} defaultValue={f.monthly_fee} onChange={e=>f.monthly_fee=e.target.value}/></td>
+          <td><input disabled={!canFee(user)} defaultValue={f.admission_fee} onChange={e=>f.admission_fee=e.target.value}/></td>
+          <td><button disabled={!canFee(user)} onClick={()=>saveFee(f)}>Save</button></td>
+        </tr>)}
+      </tbody>
+    </table>
+
+    {canUsers(user)&&<>
+      <h3>Master-admin / Admin / Co-admin</h3>
+      <div className="grid formGrid">
+        <input placeholder="Email" value={newUser.email||''} onChange={e=>setNewUser({...newUser,email:e.target.value})}/>
+        <input placeholder="Password" value={newUser.password||''} onChange={e=>setNewUser({...newUser,password:e.target.value})}/>
+        <select value={newUser.role||'coadmin'} onChange={e=>setNewUser({...newUser,role:e.target.value})}>
+          <option value="coadmin">Co-admin</option>
+          <option value="admin">Admin</option>
+          {user.role==='masteradmin'&&<option value="masteradmin">Master-admin</option>}
+        </select>
+        <button onClick={async()=>{await api('/users',{method:'POST',body:JSON.stringify(newUser)}); setMsg('User saved'); load();}}>Create / Update</button>
+      </div>
+      <table>
+        <tbody>
+          {users.map(u=><tr key={u.id}>
+            <td>{u.email}</td>
+            <td>{roleName(u.role)}</td>
+            <td>{u.role!=='masteradmin'&&<button className="danger small" onClick={async()=>{await api('/users/'+u.id,{method:'DELETE'}); load();}}>Delete</button>}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </>}
+  </section>; 
+}
 
 function AdminApp({ user, setUser, year, setYear }) { const [tab,setTab]=useState(()=>sessionStorage.getItem('activeTab')||'students'); const items=[['students','Students',Users],['admission','Admission',GraduationCap],['monthly','Monthly Fee',Receipt],['adfee','Admission Fee',Receipt],['reports','Report Cards',FileText],['money','Money Mgmt',IndianRupee],['settings','Settings',Settings],['backup','Backup',Database]]; function open(id){sessionStorage.setItem('activeTab',id); setTab(id);} return <Boundary><header><h1><GraduationCap/> School Admin</h1><div className="topInfo"><span>{user.email}</span><span>{roleName(user.role)}</span><button className="secondary" onClick={()=>{sessionStorage.removeItem('selectedYear'); setYear(null);}}>Year: {year}</button><button className="danger" onClick={()=>{sessionStorage.clear(); setUser(null);}}><LogOut size={16}/> Logout</button></div></header><nav>{items.map(([id,l,Icon])=><button key={id} onClick={()=>open(id)} className={tab===id?'active':''}><Icon size={16}/> {l}</button>)}</nav><main>{tab==='students'?<Students year={year}/>:tab==='admission'?<Admissions year={year}/>:tab==='monthly'?<MonthlyFees year={year}/>:tab==='adfee'?<AdmissionFees year={year}/>:tab==='reports'?<ReportCards year={year}/>:tab==='money'?<MoneyManagement year={year}/>:tab==='settings'?<SettingsPage user={user}/>:<Backup year={year}/>}</main></Boundary>; }
 function App(){ const [user,setUser]=useState(null),[screen,setScreen]=useState('home'),[checking,setChecking]=useState(true); const [year,setYear]=useState(()=>{const y=Number(sessionStorage.getItem('selectedYear')); return YEARS.includes(y)?y:null;}); useEffect(()=>{const t=tok(); if(!t){setChecking(false); return;} api('/me').then(r=>setUser(r.user)).catch(()=>sessionStorage.clear()).finally(()=>setChecking(false));},[]); if(checking) return <main>Loading...</main>; if(user&&!year) return <YearSelect setYear={setYear} user={user} setUser={setUser}/>; if(user&&year) return <AdminApp user={user} setUser={setUser} year={year} setYear={setYear}/>; return screen==='login'?<Login setUser={setUser} onBack={()=>setScreen('home')}/>:<Home onLogin={()=>setScreen('login')}/>; }
