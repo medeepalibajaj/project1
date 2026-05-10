@@ -20,6 +20,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const BACKUP_SECRET = process.env.BACKUP_SECRET || JWT_SECRET || 'school-backup-secret-change-me';
 const YEARS = [2025, 2026, 2027, 2028, 2029, 2030];
 
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
