@@ -688,7 +688,7 @@ app.get('/api/drive/callback', safeJsonRoute(async (req, res) => {
 
   await query(`INSERT INTO drive_tokens (provider, refresh_token, access_token, expiry_date, email) VALUES ('google_oauth', ?, ?, ?, ?) ON DUPLICATE KEY UPDATE refresh_token=VALUES(refresh_token), access_token=VALUES(access_token), expiry_date=VALUES(expiry_date), email=VALUES(email)`, [tokens.refresh_token || '', tokens.access_token || '', tokens.expiry_date || 0, email]);
 
-  res.send(`<!DOCTYPE html><html><head><title>Drive Connected</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:60px;background:#f0fdf4;color:#333;}h2{color:#15803d;} .box{background:#fff;padding:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);max-width:420px;margin:0 auto;}</style></head><body><div class="box"><h2>✅ Google Drive Connected!</h2><p>Account: <strong>${email || 'Your Google Account'}</strong></p><p>You can close this window and return to the admin panel.</p></div><script>window.opener?.postMessage({type:'GOOGLE_DRIVE_CONNECTED',email:'${email}'},'*');setTimeout(()=>window.close(),3000);</script></body></html>`);
+  res.send(`<!DOCTYPE html><html><head><title>Drive Connected</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:60px;background:#f0fdf4;color:#333;}h2{color:#15803d;} .box{background:#fff;padding:30px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08);max-width:420px;margin:0 auto;}</style></head><body><div class="box"><h2>✅ FTP Server Connected!</h2><p>Account: <strong>${email || 'Your Google Account'}</strong></p><p>You can close this window and return to the admin panel.</p></div><script>window.opener?.postMessage({type:'GOOGLE_DRIVE_CONNECTED',email:'${email}'},'*');setTimeout(()=>window.close(),3000);</script></body></html>`);
 }));
 
 app.get('/api/drive/status', auth, canManageUsers, safeJsonRoute(async (req, res) => {
@@ -702,7 +702,7 @@ app.get('/api/drive/status', auth, canManageUsers, safeJsonRoute(async (req, res
     message: !hasEnv ? 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set in environment variables.'
       : !hasFolder ? 'GOOGLE_DRIVE_FOLDER_ID is not set.'
       : !tokenRow?.refresh_token ? 'Not connected. Click Connect to link a Google account.'
-      : `Connected to ${tokenRow.email || 'Google Drive'}.`
+      : `Connected to ${tokenRow.email || 'FTP Server'}.`
   });
 }));
 
@@ -720,7 +720,7 @@ const upload = multer({
 });
 
 /**
- * Build an authenticated Google Drive client from stored OAuth tokens or
+ * Build an authenticated FTP Server client from stored OAuth tokens or
  * environment-variable credentials (service account / static refresh token).
  * Throws if no valid credentials are available.
  */
@@ -767,12 +767,12 @@ async function buildDriveClient() {
     return google.drive({ version: 'v3', auth });
   }
 
-  throw new Error('Google Drive is not connected. Please connect a Google account in Backup settings.');
+  throw new Error('FTP Server is not connected. Please connect a Google account in Backup settings.');
 }
 
 /**
  * POST /api/drive/upload
- * Upload one or more files to Google Drive.
+ * Upload one or more files to FTP Server.
  * Accepts multipart/form-data with field name "files".
  * Optional body field "folderId" overrides GOOGLE_DRIVE_FOLDER_ID.
  */
@@ -804,7 +804,7 @@ app.post('/api/drive/upload', auth, canManageUsers, upload.array('files', 20), s
 
 /**
  * GET /api/drive/download/:fileId
- * Download a file from Google Drive and stream it to the client.
+ * Download a file from FTP Server and stream it to the client.
  */
 app.get('/api/drive/download/:fileId', auth, safeJsonRoute(async (req, res) => {
   const { fileId } = req.params;
@@ -840,7 +840,7 @@ app.get('/api/drive/download/:fileId', auth, safeJsonRoute(async (req, res) => {
 
 /**
  * GET /api/drive/list
- * List files in Google Drive.
+ * List files in FTP Server.
  * Query params:
  *   folderId  – restrict to a specific folder (defaults to GOOGLE_DRIVE_FOLDER_ID)
  *   pageSize  – number of results per page (default 50, max 1000)
