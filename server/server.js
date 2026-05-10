@@ -242,7 +242,8 @@ async function initDb() {
   `);
 
   await tryQuery("ALTER TABLE users MODIFY COLUMN role VARCHAR(30) NOT NULL DEFAULT 'coadmin'");
-  await addColumnIfMissing('students', 'admission_id', 'INT NULL AFTER id');
+  await addColumnIfMissing('students', 'student_id_custom', 'VARCHAR(50) NULL AFTER id');
+  await addColumnIfMissing('students', 'admission_id', 'INT NULL AFTER student_id_custom');
   await addColumnIfMissing('students', 'academic_year', 'INT NOT NULL DEFAULT 2025 AFTER admission_id');
   await addColumnIfMissing('students', 'class_name', 'VARCHAR(80) NULL AFTER sex');
   await addColumnIfMissing('students', 'guardian_name', 'VARCHAR(190) NULL AFTER class_name');
@@ -251,7 +252,8 @@ async function initDb() {
   await addColumnIfMissing('students', 'contact_no', 'VARCHAR(50) NULL AFTER dob');
   await addColumnIfMissing('students', 'photo_url', 'LONGTEXT NULL AFTER contact_no');
   await addColumnIfMissing('students', 'status', "VARCHAR(20) NOT NULL DEFAULT 'active' AFTER photo_url");
-  await addColumnIfMissing('admissions', 'student_id', 'INT NULL AFTER id');
+  await addColumnIfMissing('admissions', 'student_id_custom', 'VARCHAR(50) NULL AFTER id');
+  await addColumnIfMissing('admissions', 'student_id', 'INT NULL AFTER student_id_custom');
   await addColumnIfMissing('admissions', 'academic_year', 'INT NOT NULL DEFAULT 2025 AFTER student_id');
   await addColumnIfMissing('admissions', 'class_name', 'VARCHAR(80) NULL AFTER sex');
   await addColumnIfMissing('admissions', 'photo_url', 'LONGTEXT NULL AFTER contact_no');
@@ -281,14 +283,22 @@ async function initDb() {
   }
 }
 
+async function generateStudentId(name, className, year) {
+  const prefix = (name || 'STU').substring(0, 3).toUpperCase();
+  const cls = (className || 'NA').replace(/\s+/g, '').substring(0, 3).toUpperCase();
+  const random = Math.floor(1000 + Math.random() * 9000);
+  return `${prefix}-${cls}-${year}-${random}`;
+}
+
 async function syncAdmissionsToStudents(year) {
   const missing = await query(`SELECT a.* FROM admissions a LEFT JOIN students s ON s.id = a.student_id WHERE a.academic_year=? AND (a.student_id IS NULL OR s.id IS NULL)`, [year]);
   for (const a of missing) {
+    const customId = a.student_id_custom || await generateStudentId(a.name, a.class_name, year);
     const sr = await query(
-      "INSERT INTO students(admission_id,academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,status) VALUES(?,?,?,?,?,?,?,?,?,?,'active')",
-      [a.id, year, a.name, a.sex, a.class_name || 'Nursery', a.guardian_name, a.address, sqlDate(a.dob), a.contact_no, a.photo_url]
+      "INSERT INTO students(student_id_custom,admission_id,academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,'active')",
+      [customId, a.id, year, a.name, a.sex, a.class_name || 'Nursery', a.guardian_name, a.address, sqlDate(a.dob), a.contact_no, a.photo_url]
     );
-    await query('UPDATE admissions SET student_id=? WHERE id=?', [sr.insertId, a.id]);
+    await query('UPDATE admissions SET student_id=?, student_id_custom=? WHERE id=?', [sr.insertId, customId, a.id]);
   }
   await tryQuery('UPDATE students s JOIN admissions a ON a.student_id=s.id SET s.admission_id=a.id WHERE s.admission_id IS NULL');
 }
@@ -383,7 +393,7 @@ app.get('/api/students', auth, safeJsonRoute(async (req, res) => {
   const year = selectedYear(req);
   await syncAdmissionsToStudents(year);
   res.set('Cache-Control', 'no-store');
-  const rows = await query(`SELECT id, admission_id, academic_year, name, sex, class_name, guardian_name, address, dob, contact_no, photo_url, COALESCE(status,'active') AS status, created_at, TIMESTAMPDIFF(YEAR, dob, CURDATE()) AS age FROM students WHERE academic_year=? ORDER BY id DESC`, [year]);
+  const rows = await query(`SELECT id, student_id_custom, admission_id, academic_year, name, sex, class_name, guardian_name, address, dob, contact_no, photo_url, COALESCE(status,'active') AS status, created_at, TIMESTAMPDIFF(YEAR, dob, CURDATE()) AS age FROM students WHERE academic_year=? ORDER BY id DESC`, [year]);
   res.json(rows);
 }));
 
@@ -391,14 +401,15 @@ app.post('/api/students', auth, safeJsonRoute(async (req, res) => {
   const b = req.body; const year = selectedYear(req);
   if (!b.name) return res.status(400).json({ error: 'Name is required' });
   if (!b.dob) return res.status(400).json({ error: 'DOB is required' });
-  await query('INSERT INTO students(academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,status) VALUES(?,?,?,?,?,?,?,?,?,?)', [year, b.name, b.sex, b.class_name || 'Nursery', b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url, b.status || 'active']);
+  const customId = b.student_id_custom || await generateStudentId(b.name, b.class_name, year);
+  await query('INSERT INTO students(student_id_custom,academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)', [customId, year, b.name, b.sex, b.class_name || 'Nursery', b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url, b.status || 'active']);
   res.json({ ok: true });
 }));
 
 app.put('/api/students/:id', auth, safeJsonRoute(async (req, res) => {
   const b = req.body; const year = selectedYear(req);
   if (!b.dob) return res.status(400).json({ error: 'DOB is required' });
-  await query('UPDATE students SET academic_year=?,name=?,sex=?,class_name=?,guardian_name=?,address=?,dob=?,contact_no=?,photo_url=?,status=? WHERE id=?', [year, b.name, b.sex, b.class_name || 'Nursery', b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url, b.status || 'active', req.params.id]);
+  await query('UPDATE students SET student_id_custom=?,academic_year=?,name=?,sex=?,class_name=?,guardian_name=?,address=?,dob=?,contact_no=?,photo_url=?,status=? WHERE id=?', [b.student_id_custom, year, b.name, b.sex, b.class_name || 'Nursery', b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url, b.status || 'active', req.params.id]);
   res.json({ ok: true });
 }));
 
@@ -420,15 +431,16 @@ app.post('/api/admissions', auth, safeJsonRoute(async (req, res) => {
   if (!b.dob) return res.status(400).json({ error: 'DOB is required' });
   const cls = b.class_name || 'Nursery';
   const fs = (await query('SELECT admission_fee FROM fee_structures WHERE class_name=?', [cls]))[0];
+  const customId = b.student_id_custom || await generateStudentId(b.name, cls, year);
   const p = await getPool(); const conn = await p.getConnection();
   try {
     await conn.beginTransaction();
-    const [studentResult] = await conn.query("INSERT INTO students(academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,status) VALUES(?,?,?,?,?,?,?,?,?,'active')", [year, b.name, b.sex, cls, b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url]);
+    const [studentResult] = await conn.query("INSERT INTO students(student_id_custom,academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,status) VALUES(?,?,?,?,?,?,?,?,?,?,'active')", [customId, year, b.name, b.sex, cls, b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url]);
     const studentId = studentResult.insertId;
-    const [admResult] = await conn.query('INSERT INTO admissions(student_id,academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,admission_fee) VALUES(?,?,?,?,?,?,?,?,?,?,?)', [studentId, year, b.name, b.sex, cls, b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url, fs?.admission_fee || 0]);
+    const [admResult] = await conn.query('INSERT INTO admissions(student_id_custom,student_id,academic_year,name,sex,class_name,guardian_name,address,dob,contact_no,photo_url,admission_fee) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', [customId, studentId, year, b.name, b.sex, cls, b.guardian_name, b.address, sqlDate(b.dob), b.contact_no, b.photo_url, fs?.admission_fee || 0]);
     await conn.query('UPDATE students SET admission_id=? WHERE id=?', [admResult.insertId, studentId]);
     await conn.commit();
-    res.json({ ok: true, student_id: studentId, admission_id: admResult.insertId });
+    res.json({ ok: true, student_id: studentId, admission_id: admResult.insertId, student_id_custom: customId });
   } catch (e) {
     await conn.rollback();
     console.error('ADMISSION SAVE ERROR:', e);
