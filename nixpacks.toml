@@ -2,7 +2,7 @@
 cmds = ["npm install --no-audit --no-fund"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm run build" docker build --no-cache -t myapp .]
 
 [start]
 cmd = "npm start"
