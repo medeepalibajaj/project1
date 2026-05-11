@@ -28,7 +28,8 @@ let pool;
 
 function mysqlUrlWithMultiStatements(url) {
   if (!url) return url;
-  return url + (url.includes('?') ? '&' : '?') + 'multipleStatements=true';
+  const sep = url.includes('?') ? '&' : '?';
+  return url + sep + 'multipleStatements=true&charset=utf8mb4';
 }
 
 async function getPool() {
@@ -51,6 +52,7 @@ async function getPool() {
         console.log('Using individual DB variables for database connection.');
         pool = mysql.createPool({
           host, user, password, database, port,
+          charset: 'utf8mb4',
           waitForConnections: true, connectionLimit: 10, queueLimit: 0, multipleStatements: true
         });
       }
