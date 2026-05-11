@@ -57,7 +57,16 @@ async function getPool() {
         });
       }
 
+      // Force UTF-8 encoding on every new physical connection so that
+      // character_set_client/connection/results are all utf8mb4, preventing
+      // corruption of bcrypt hashes and other special characters regardless
+      // of the server-level default character set.
+      pool.on('connection', (conn) => {
+        conn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+      });
+
       const conn = await pool.getConnection();
+      await conn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
       conn.release();
       console.log('Database connected successfully.');
     } catch (e) {
