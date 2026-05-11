@@ -412,6 +412,21 @@ app.put('/api/classes/:id', auth, adminFeeOnly, safeJsonRoute(async (req, res) =
   } finally { conn.release(); }
 }));
 
+app.delete('/api/classes/:id', auth, adminFeeOnly, safeJsonRoute(async (req, res) => {
+  const old = (await query('SELECT name FROM classes WHERE id=?', [req.params.id]))[0];
+  if (!old) return res.json({ ok: true });
+  
+  // Check if students exist in this class
+  const students = await query('SELECT COUNT(*) as count FROM students WHERE class_name=?', [old.name]);
+  if (students[0].count > 0) {
+    return res.status(400).json({ error: 'Cannot delete class with existing students' });
+  }
+
+  await query('DELETE FROM classes WHERE id=?', [req.params.id]);
+  await query('DELETE FROM fee_structures WHERE class_name=?', [old.name]);
+  res.json({ ok: true });
+}));
+
 app.get('/api/school-info', safeJsonRoute(async (req, res) => {
   const rows = await query('SELECT * FROM school_info WHERE id=1');
   res.json(rows[0] || {});
@@ -426,10 +441,7 @@ app.put('/api/school-info', auth, adminFeeOnly, safeJsonRoute(async (req, res) =
   res.json({ ok: true });
 }));
 
-app.put('/api/classes/:id', auth, adminFeeOnly, safeJsonRoute(async (req, res) => {
-  await query('UPDATE classes SET name=?,sort_order=? WHERE id=?', [req.body.name, req.body.sort_order || 99, req.params.id]);
-  res.json({ ok: true });
-}));
+// Removed duplicate route to avoid conflict with the transactional update above
 
 app.get('/api/fee-structures', auth, safeJsonRoute(async (req, res) => {
   res.json(await query("SELECT * FROM fee_structures ORDER BY FIELD(class_name,'Nursery','KG','Class 1','Class 2','Class 3','Class 4','Class 5'), class_name"));

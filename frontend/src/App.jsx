@@ -153,7 +153,22 @@ function SettingsPage({ user }) {
 
   async function saveFee(f){await api('/fee-structures/'+encodeURIComponent(f.class_name),{method:'PUT',body:JSON.stringify(f)}); setMsg('Fee structure saved'); load();}
   async function saveSchool(){await api('/school-info',{method:'PUT',body:JSON.stringify(school)}); setMsg('School information updated'); load();}
-  async function updateClassName(id, name){await api('/classes/'+id,{method:'PUT',body:JSON.stringify({name})}); setEditingClass(null); setMsg('Class name updated'); load();}
+  async function updateClassName(id, name){
+    if(!name) return setEditingClass(null);
+    await api('/classes/'+id,{method:'PUT',body:JSON.stringify({name})}); 
+    setEditingClass(null); 
+    setMsg('Class name updated'); 
+    load();
+  }
+
+  async function deleteClass(id){
+    if(!confirm('Are you sure you want to delete this class? This will also remove its fee structure.')) return;
+    try {
+      await api('/classes/'+id,{method:'DELETE'});
+      setMsg('Class deleted');
+      load();
+    } catch(e) { setMsg(e.message); }
+  }
 
   return <section className="card">
     <h2>Settings & Roles</h2>
@@ -201,14 +216,22 @@ function SettingsPage({ user }) {
     <h3>Fee Structure</h3>
     {!canFee(user)&&<div className="alert error">Co-admin cannot change fee structure.</div>}
     <table>
-      <thead><tr><th>Class</th><th>Monthly Fee</th><th>Admission Fee</th><th>Save</th></tr></thead>
+      <thead><tr><th>Class</th><th>Monthly Fee</th><th>Admission Fee</th><th>Actions</th></tr></thead>
       <tbody>
-        {fees.map(f=><tr key={f.class_name}>
-          <td>{f.class_name}</td>
-          <td><input disabled={!canFee(user)} defaultValue={f.monthly_fee} onChange={e=>f.monthly_fee=e.target.value}/></td>
-          <td><input disabled={!canFee(user)} defaultValue={f.admission_fee} onChange={e=>f.admission_fee=e.target.value}/></td>
-          <td><button disabled={!canFee(user)} onClick={()=>saveFee(f)}>Save</button></td>
-        </tr>)}
+        {fees.map(f=>{
+          const classObj = classes.find(c => c.name === f.class_name);
+          return <tr key={f.class_name}>
+            <td>{f.class_name}</td>
+            <td><input disabled={!canFee(user)} defaultValue={f.monthly_fee} onChange={e=>f.monthly_fee=e.target.value}/></td>
+            <td><input disabled={!canFee(user)} defaultValue={f.admission_fee} onChange={e=>f.admission_fee=e.target.value}/></td>
+            <td>
+              <div className="toolbar" style={{margin:0}}>
+                <button disabled={!canFee(user)} onClick={()=>saveFee(f)}><Save size={14}/> Save</button>
+                {classObj && <button className="danger" disabled={!canFee(user)} onClick={()=>deleteClass(classObj.id)}><Trash2 size={14}/> Delete</button>}
+              </div>
+            </td>
+          </tr>
+        })}
       </tbody>
     </table>
 
